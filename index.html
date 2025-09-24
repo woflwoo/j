@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>咖啡券抽獎</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial;
+           margin: 0; background:#fafafa; color:#222; }
+    .wrap { max-width: 520px; margin: 0 auto; padding: 24px; }
+    .card { background:#fff; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.06);
+            padding:24px; text-align:center; }
+    .avatar { width:96px; height:96px; border-radius:50%; object-fit:cover; display:block; margin: 0 auto 12px; }
+    .title { font-size:20px; font-weight:700; margin: 6px 0 4px; }
+    .sub { color:#666; font-size:14px; margin: 0 0 16px; }
+    .btn { display:inline-block; padding:14px 18px; border-radius:12px; border:none; cursor:pointer;
+           font-weight:700; font-size:16px; background:#06c755; color:#fff; }
+    .btn[disabled]{ opacity:.6; cursor:not-allowed; }
+    .note { font-size:12px; color:#888; margin-top:12px; }
+    .result { font-size:22px; font-weight:800; margin:16px 0 6px; }
+    .win { color:#06c755; } .lose { color:#c62828; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <img id="avatar" class="avatar" src="https://media.licdn.com/dms/image/v2/C5603AQFF25eere2iMQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1516850218769?e=2147483647&v=beta&t=6n0i3Zbw2FhhxXFmYi8vRnEVdJ4U1HIiXLHEpr3ubqc" alt="avatar" />
+      <div class="title">咖啡券抽獎</div>
+      <p class="sub">按下按鈕即開始抽獎，結果會同步回報主辦方。</p>
+
+      <button id="drawBtn" class="btn">開始抽獎</button>
+
+      <div id="resultBox" class="hidden">
+        <div id="resultText" class="result"></div>
+        <div id="descText" class="sub"></div>
+        <button id="againBtn" class="btn" style="background:#4c98ff;margin-top:12px;">再抽一次（測試用）</button>
+      </div>
+
+      <div class="note">若未登入 LINE，系統會引導你登入後再回來。</div>
+    </div>
+  </div>
+
+  <script>
+    // ---- 基本設定 ----
+    const WEBHOOK = "https://wooow.zeabur.app/webhook/jakko";
+    // 可用網址參數帶 liffId，例：?liffId=2000000000-xxxxxx
+    const urlLiffId = new URL(location.href).searchParams.get('liffId') || '';
+    const FALLBACK_AVATAR = document.getElementById('avatar').src;
+
+    // ---- 元件 ----
+    const drawBtn   = document.getElementById('drawBtn');
+    const againBtn  = document.getElementById('againBtn');
+    const resultBox = document.getElementById('resultBox');
+    const resultText= document.getElementById('resultText');
+    const descText  = document.getElementById('descText');
+    const avatarImg = document.getElementById('avatar');
+
+    // ---- 狀態 ----
+    let liffReady   = false;
+    let profile     = { userId: null, displayName: null, pictureUrl: null };
+    let liffIdUsed  = null;
+
+    // ---- 初始化 LIFF（可在 LIFF 內或一般瀏覽器執行）----
+    (async function init() {
+      try {
+        if (urlLiffId) {
+          await liff.init({ liffId: urlLiffId });
+          liffIdUsed = urlLiffId;
+        } else {
+          // 若你想硬寫 LIFF ID，改這裡：
+          // await liff.init({ liffId: "YOUR_LIFF_ID" });
+          // liffIdUsed = "YOUR_LIFF_ID";
+        }
+        liffReady = true;
+
+        if (liff.isInClient() || urlLiffId) {
+          if (!liff.isLoggedIn()) {
+            liff.login({ redirectUri: location.href });
+            return; // 等轉跳回來
+          }
+          // 取得使用者資訊
+          const p = await liff.getProfile();
+          profile.userId = p?.userId || null;
+          profile.displayName = p?.displayName || null;
+          profile.pictureUrl = p?.pictureUrl || null;
+          if (profile.pictureUrl) avatarImg.src = profile.pictureUrl;
+        }
+      } catch (err) {
+        console.warn("LIFF 初始化失敗，將以一般網頁模式運行：", err);
+      }
+    })();
+
+    // ---- 抽獎主程式：50% 中獎 ----
+    async function doDraw() {
+      drawBtn.disabled = true;
+      try {
+        // 50% 機率
+        const isWin = Math.random() < 0.5;
+        const outcome = isWin ? "WIN" : "LOSE";
+
+        // UI 顯示結果
+        resultText.textContent = isWin ? "🎉 恭喜中獎！" : "😭 很可惜，沒中獎";
+        resultText.className = "result " + (isWin ? "win" : "lose");
+        descText.textContent = isWin
+          ? "請依頁面或訊息指示，完成後續領取步驟。"
+          : "別氣餒，再試一次也許就中囉！";
+
+        resultBox.classList.remove('hidden');
+
+        // 回報 webhook
+        const payload = {
+          type: "liff-lottery",
+          liffId: liffIdUsed,
+          outcome,
+          ts: new Date().toISOString(),
+          user: {
+            userId: profile.userId,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl
+          },
+          ua: navigator.userAgent,
+          context: (() => {
+            try { return liff.getContext ? liff.getContext() : null; } catch { return null; }
+          })(),
+          nonce: (Math.random().toString(36).slice(2) + Date.now().toString(36))
+        };
+
+        await fetch(WEBHOOK, {
+          method: "POST",
+          mode: "cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }).catch(err => {
+          console.warn("Webhook 回報失敗（將略過，不影響前端體驗）", err);
+        });
+      } finally {
+        drawBtn.disabled = false;
+      }
+    }
+
+    drawBtn.addEventListener('click', doDraw);
+    againBtn.addEventListener('click', doDraw);
+  </script>
+</body>
+</html>
