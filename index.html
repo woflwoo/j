@@ -43,13 +43,14 @@
   </div>
 
   <script>
-    // ---- 基本設定 ----
+    // ---- 設定 ----
     const WEBHOOK = "https://wooow.zeabur.app/webhook/jakko";
-    // 可用網址參數帶 liffId，例：?liffId=2000000000-xxxxxx
+    // 支援網址參數 ?liffId=XXXX，若無則使用寫死的 LIFF_ID
     const urlLiffId = new URL(location.href).searchParams.get('liffId') || '';
+    const LIFF_ID = "2008169900-g9qv0A8w"; // ← 你的 LIFF ID
     const FALLBACK_AVATAR = document.getElementById('avatar').src;
 
-    // ---- 元件 ----
+    // ---- DOM ----
     const drawBtn   = document.getElementById('drawBtn');
     const againBtn  = document.getElementById('againBtn');
     const resultBox = document.getElementById('resultBox');
@@ -58,27 +59,22 @@
     const avatarImg = document.getElementById('avatar');
 
     // ---- 狀態 ----
-    let liffReady   = false;
     let profile     = { userId: null, displayName: null, pictureUrl: null };
     let liffIdUsed  = null;
 
     // ---- 初始化 LIFF（可在 LIFF 內或一般瀏覽器執行）----
     (async function init() {
       try {
-        if (urlLiffId) {
-          await liff.init({ liffId: urlLiffId });
-          liffIdUsed = urlLiffId;
-        } else {
-          // 若你想硬寫 LIFF ID，改這裡：
-          // await liff.init({ liffId: "YOUR_LIFF_ID" });
-          // liffIdUsed = "YOUR_LIFF_ID";
+        const liffIdToUse = urlLiffId || LIFF_ID;
+        if (liffIdToUse) {
+          await liff.init({ liffId: liffIdToUse });
+          liffIdUsed = liffIdToUse;
         }
-        liffReady = true;
 
-        if (liff.isInClient() || urlLiffId) {
+        if (liff.isInClient() || liffIdToUse) {
           if (!liff.isLoggedIn()) {
             liff.login({ redirectUri: location.href });
-            return; // 等轉跳回來
+            return; // 會跳轉，回來後再繼續
           }
           // 取得使用者資訊
           const p = await liff.getProfile();
@@ -106,7 +102,6 @@
         descText.textContent = isWin
           ? "請依頁面或訊息指示，完成後續領取步驟。"
           : "別氣餒，再試一次也許就中囉！";
-
         resultBox.classList.remove('hidden');
 
         // 回報 webhook
@@ -133,7 +128,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         }).catch(err => {
-          console.warn("Webhook 回報失敗（將略過，不影響前端體驗）", err);
+          console.warn("Webhook 回報失敗（略過，不影響前端體驗）", err);
         });
       } finally {
         drawBtn.disabled = false;
